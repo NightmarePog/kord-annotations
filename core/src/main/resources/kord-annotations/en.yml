@@ -1,0 +1,7 @@
+kordAnnotations:
+  loading: "Working…"
+  error:
+    missingOption: "The required option {option} is missing."
+    invalidOption: "The option {option} has the wrong type."
+    cooldown: "Try again in {seconds, plural, one {# second} other {# seconds}}."
+    timeout: "The command timed out after {seconds, plural, one {# second} other {# seconds}}."
