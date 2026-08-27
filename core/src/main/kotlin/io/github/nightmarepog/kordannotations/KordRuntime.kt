@@ -35,19 +35,18 @@ import kotlinx.coroutines.flow.toList
 import kotlin.math.pow
 import kotlin.reflect.KClass
 
-public class InstanceHandlerResolver(instances: Iterable<Any>) : HandlerResolver {
+class InstanceHandlerResolver(instances: Iterable<Any>) : HandlerResolver {
     private val instances = instances.associateBy { it::class }
 
-    public constructor(vararg instances: Any) : this(instances.asIterable())
+    constructor(vararg instances: Any) : this(instances.asIterable())
 
     override fun resolve(type: KClass<*>): Any = instances[type]
         ?: error("No handler instance was registered for ${type.qualifiedName}")
 }
 
-public class KordAnnotations(
+class KordAnnotations(
     modules: Iterable<CommandModule>,
     handlerResolver: HandlerResolver,
-    private val translations: TranslationProvider = EmptyTranslations,
     cooldownStore: CooldownStore = InMemoryCooldownStore(),
     observers: List<CommandObserver> = emptyList(),
 ) {
@@ -67,7 +66,7 @@ public class KordAnnotations(
     }
 
     /** Installs listeners. Call this before [Kord.login]. */
-    public fun install(kord: Kord): List<Job> = listOf(
+    fun install(kord: Kord): List<Job> = listOf(
         kord.on<ApplicationCommandInteractionCreateEvent> {
             val kordInteraction = interaction
             val generated = findCommand(kordInteraction) ?: return@on
@@ -77,7 +76,6 @@ public class KordAnnotations(
                 identity(kordInteraction, kordInteraction.invokedCommandGuildId?.toString()),
                 options,
                 KordResponseController(kordInteraction),
-                translations,
                 resolver,
                 kordInteraction,
             )
@@ -102,7 +100,6 @@ public class KordAnnotations(
                 identity(interaction),
                 commandOptions(interaction.command, generated.descriptor),
                 UnavailableResponseController,
-                translations,
                 resolver,
             )
             val provider = resolver.resolve(providerType) as AutocompleteProvider
@@ -112,7 +109,7 @@ public class KordAnnotations(
     )
 
     /** Replaces the complete global application-command set, which also removes stale commands. */
-    public suspend fun syncGlobalCommands(kord: Kord, maximumAttempts: Int = 3) {
+    suspend fun syncGlobalCommands(kord: Kord, maximumAttempts: Int = 3) {
         require(maximumAttempts > 0)
         var lastFailure: Throwable? = null
         repeat(maximumAttempts) { attempt ->
@@ -206,7 +203,6 @@ public class KordAnnotations(
             identity(interaction),
             values,
             KordResponseController(interaction),
-            translations,
         )
         componentExecutor.execute(generated, context)
     }

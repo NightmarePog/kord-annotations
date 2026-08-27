@@ -11,12 +11,12 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 import kotlin.time.Duration.Companion.seconds
 
-public interface CooldownStore {
-    public fun remainingSeconds(key: String, durationSeconds: Int): Long?
-    public fun record(key: String)
+interface CooldownStore {
+    fun remainingSeconds(key: String, durationSeconds: Int): Long?
+    fun record(key: String)
 }
 
-public class InMemoryCooldownStore(private val clock: Clock = Clock.systemUTC()) : CooldownStore {
+class InMemoryCooldownStore(private val clock: Clock = Clock.systemUTC()) : CooldownStore {
     private val uses = ConcurrentHashMap<String, Instant>()
 
     override fun remainingSeconds(key: String, durationSeconds: Int): Long? {
@@ -30,12 +30,12 @@ public class InMemoryCooldownStore(private val clock: Clock = Clock.systemUTC())
     }
 }
 
-public class CommandExecutor(
+class CommandExecutor(
     private val resolver: HandlerResolver,
     private val cooldowns: CooldownStore = InMemoryCooldownStore(),
     private val observers: List<CommandObserver> = emptyList(),
 ) {
-    public suspend fun execute(command: GeneratedCommand, context: CommandContext) {
+    suspend fun execute(command: GeneratedCommand, context: CommandContext) {
         val startedAt = System.nanoTime()
         notify(CommandExecutionEvent.Started(command.descriptor))
         try {
@@ -102,15 +102,15 @@ public class CommandExecutor(
     }
 
     private fun startLoadingResponse(scope: CoroutineScope, policy: ExecutionPolicy, context: CommandContext) =
-        policy.loadingResponseKey?.let { key ->
+        policy.loadingResponse?.let { response ->
             scope.launch {
                 delay(policy.loadingResponseDelayMillis)
-                if (!context.hasResponded) context.respond(context.translate(key))
+                if (!context.hasResponded) context.respond(response)
             }
         }
 
     private suspend fun respondWithFailure(context: CommandContext, failure: CommandFailure) {
-        context.respond(context.translate(failure.translationKey, failure.arguments), ReplyVisibility.PRIVATE)
+        context.respond(failure.message, ReplyVisibility.PRIVATE)
     }
 
     private suspend fun notify(event: CommandExecutionEvent) {
@@ -120,19 +120,19 @@ public class CommandExecutor(
     private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000
 }
 
-public class ComponentExecutor(
+class ComponentExecutor(
     private val resolver: HandlerResolver,
     private val cooldowns: CooldownStore = InMemoryCooldownStore(),
 ) {
-    public suspend fun execute(component: GeneratedComponent, context: ComponentContext) {
+    suspend fun execute(component: GeneratedComponent, context: ComponentContext) {
         val policy = component.descriptor.execution
         try {
             enforceCooldown(component.descriptor, context.identity)
             supervisorScope {
-                val loading = policy.loadingResponseKey?.let { key ->
+                val loading = policy.loadingResponse?.let { response ->
                     launch {
                         delay(policy.loadingResponseDelayMillis)
-                        if (!context.hasResponded) context.respond(context.translate(key))
+                        if (!context.hasResponded) context.respond(response)
                     }
                 }
                 try {
@@ -148,9 +148,9 @@ public class ComponentExecutor(
             }
         } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
             val seconds = policy.timeoutSeconds ?: 30
-            context.respond(context.translate("kordAnnotations.error.timeout", mapOf("seconds" to seconds)), ReplyVisibility.PRIVATE)
+            context.respond(CommandTimedOutException(seconds).message, ReplyVisibility.PRIVATE)
         } catch (failure: CommandFailure) {
-            context.respond(context.translate(failure.translationKey, failure.arguments), ReplyVisibility.PRIVATE)
+            context.respond(failure.message, ReplyVisibility.PRIVATE)
         }
     }
 

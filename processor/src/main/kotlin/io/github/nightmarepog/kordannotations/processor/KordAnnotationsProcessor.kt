@@ -48,7 +48,7 @@ internal class KordAnnotationsProcessor(
             writer.appendLine()
             writer.appendLine("import io.github.nightmarepog.kordannotations.*")
             writer.appendLine()
-            writer.appendLine("public class $moduleName : CommandModule {")
+            writer.appendLine("class $moduleName : CommandModule {")
             writer.appendLine("    override val commands: List<GeneratedCommand> = listOf(")
             commands.forEach { writer.appendLine(it.prependIndent("        ") + ",") }
             writer.appendLine("    )")
@@ -279,7 +279,7 @@ internal class KordAnnotationsProcessor(
         val loading = when {
             has(NO_LOADING_RESPONSE) -> "null"
             nearest(LOADING_RESPONSE) != null -> nearest(LOADING_RESPONSE)!!.stringValue().orEmpty().literal()
-            else -> "\"kordAnnotations.loading\""
+            else -> "\"Working…\""
         }
         val cooldown = nearest(COOLDOWN)
         val cooldownSeconds = cooldown?.longValue("seconds")?.toString() ?: "null"
@@ -290,7 +290,7 @@ internal class KordAnnotationsProcessor(
             has(BOT_DM) -> "InteractionContextType.GUILD, InteractionContextType.BOT_DM"
             else -> "InteractionContextType.GUILD"
         }
-        return "ExecutionPolicy(visibility = $visibility, contexts = setOf($contextSource), cooldownSeconds = $cooldownSeconds, cooldownScope = $cooldownScope, timeoutSeconds = $timeout, loadingResponseKey = $loading, observed = ${has(OBSERVED)})"
+        return "ExecutionPolicy(visibility = $visibility, contexts = setOf($contextSource), cooldownSeconds = $cooldownSeconds, cooldownScope = $cooldownScope, timeoutSeconds = $timeout, loadingResponse = $loading)"
     }
 
     private fun KSAnnotated.annotation(name: String): KSAnnotation? = annotations.firstOrNull {
@@ -345,7 +345,6 @@ internal class KordAnnotationsProcessor(
         const val NO_TIMEOUT = PREFIX + "NoTimeout"
         const val LOADING_RESPONSE = PREFIX + "LoadingResponse"
         const val NO_LOADING_RESPONSE = PREFIX + "NoLoadingResponse"
-        const val OBSERVED = PREFIX + "Observed"
         const val COMMAND_CONTEXT = PREFIX + "CommandContext"
         const val COMPONENT_CONTEXT = PREFIX + "ComponentContext"
         const val CHECKED_BY = PREFIX + "CheckedBy"

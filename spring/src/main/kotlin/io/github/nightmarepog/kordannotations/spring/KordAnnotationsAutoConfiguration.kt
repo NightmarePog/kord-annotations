@@ -3,10 +3,8 @@ package io.github.nightmarepog.kordannotations.spring
 import dev.kord.core.Kord
 import io.github.nightmarepog.kordannotations.CommandModule
 import io.github.nightmarepog.kordannotations.CommandModules
-import io.github.nightmarepog.kordannotations.DefaultTranslations
 import io.github.nightmarepog.kordannotations.HandlerResolver
 import io.github.nightmarepog.kordannotations.KordAnnotations
-import io.github.nightmarepog.kordannotations.TranslationProvider
 import kotlinx.coroutines.runBlocking
 import org.springframework.beans.factory.SmartInitializingSingleton
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -20,31 +18,26 @@ import org.springframework.context.annotation.Import
 @AutoConfiguration
 @EnableConfigurationProperties(KordAnnotationsProperties::class)
 @Import(KordAnnotationsHandlerRegistrar::class)
-public class KordAnnotationsAutoConfiguration {
+class KordAnnotationsAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
-    public fun generatedCommandModules(): List<CommandModule> = CommandModules.load()
+    fun generatedCommandModules(): List<CommandModule> = CommandModules.load()
 
     @Bean
     @ConditionalOnMissingBean
-    public fun translationProvider(): TranslationProvider = DefaultTranslations.load()
-
-    @Bean
-    @ConditionalOnMissingBean
-    public fun handlerResolver(applicationContext: ApplicationContext): HandlerResolver =
+    fun handlerResolver(applicationContext: ApplicationContext): HandlerResolver =
         SpringHandlerResolver(applicationContext)
 
     @Bean
     @ConditionalOnMissingBean
-    public fun kordAnnotations(
+    fun kordAnnotations(
         modules: List<CommandModule>,
         handlerResolver: HandlerResolver,
-        translationProvider: TranslationProvider,
-    ): KordAnnotations = KordAnnotations(modules, handlerResolver, translationProvider)
+    ): KordAnnotations = KordAnnotations(modules, handlerResolver)
 
     @Bean
     @ConditionalOnBean(Kord::class)
-    public fun kordAnnotationsInstaller(
+    fun kordAnnotationsInstaller(
         kord: Kord,
         kordAnnotations: KordAnnotations,
         properties: KordAnnotationsProperties,

@@ -7,25 +7,25 @@ import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
-public sealed interface ComponentStateResult<out T : Any> {
-    public data class Found<T : Any>(public val value: T) : ComponentStateResult<T>
-    public data object Missing : ComponentStateResult<Nothing>
-    public data object Expired : ComponentStateResult<Nothing>
-    public data object WrongUser : ComponentStateResult<Nothing>
+sealed interface ComponentStateResult<out T : Any> {
+    data class Found<T : Any>(val value: T) : ComponentStateResult<T>
+    data object Missing : ComponentStateResult<Nothing>
+    data object Expired : ComponentStateResult<Nothing>
+    data object WrongUser : ComponentStateResult<Nothing>
 }
 
-public interface ComponentStateStore {
-    public fun <T : Any> create(
+interface ComponentStateStore {
+    fun <T : Any> create(
         value: T,
         ownerUserId: String,
         lifetime: Duration = Duration.ofMinutes(15),
         reusable: Boolean = true,
     ): String
 
-    public fun <T : Any> consume(token: String, userId: String, type: Class<T>): ComponentStateResult<T>
+    fun <T : Any> consume(token: String, userId: String, type: Class<T>): ComponentStateResult<T>
 }
 
-public class InMemoryComponentStateStore(
+class InMemoryComponentStateStore(
     private val clock: Clock = Clock.systemUTC(),
     private val random: SecureRandom = SecureRandom(),
 ) : ComponentStateStore {

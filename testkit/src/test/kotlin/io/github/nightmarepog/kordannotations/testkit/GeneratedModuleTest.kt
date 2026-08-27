@@ -66,6 +66,8 @@ class GeneratedModuleTest {
         val result = harness.execute(command, mapOf("name" to "Ada"))
 
         assertEquals("Hello, Ada!", result.responses.single().content)
+        assertEquals("Greets somebody", command.descriptor.description)
+        assertEquals("Who to greet", command.descriptor.options.single { it.name == "name" }.description)
         assertEquals(false, command.descriptor.options.single { it.name == "punctuation" }.required)
     }
 

@@ -1,22 +1,20 @@
 package io.github.nightmarepog.kordannotations
 
-public open class CommandFailure(
-    public val translationKey: String,
-    public val arguments: Map<String, Any?> = emptyMap(),
+open class CommandFailure(
+    override val message: String,
     cause: Throwable? = null,
-) : RuntimeException(translationKey, cause)
+) : RuntimeException(message, cause)
 
-public class MissingCommandOptionException(optionName: String) :
-    CommandFailure("kordAnnotations.error.missingOption", mapOf("option" to optionName))
+class MissingCommandOptionException(optionName: String) :
+    CommandFailure("The required option $optionName is missing.")
 
-public class InvalidCommandOptionException(optionName: String, expected: String, actual: String) :
-    CommandFailure(
-        "kordAnnotations.error.invalidOption",
-        mapOf("option" to optionName, "expected" to expected, "actual" to actual),
-    )
+class InvalidCommandOptionException(optionName: String, expected: String, actual: String) :
+    CommandFailure("The option $optionName has the wrong type: expected $expected, but received $actual.")
 
-public class CommandOnCooldownException(retryAfterSeconds: Long) :
-    CommandFailure("kordAnnotations.error.cooldown", mapOf("seconds" to retryAfterSeconds))
+class CommandOnCooldownException(retryAfterSeconds: Long) :
+    CommandFailure("Try again in ${formatSeconds(retryAfterSeconds)}.")
 
-public class CommandTimedOutException(seconds: Int) :
-    CommandFailure("kordAnnotations.error.timeout", mapOf("seconds" to seconds))
+class CommandTimedOutException(seconds: Int) :
+    CommandFailure("The command timed out after ${formatSeconds(seconds.toLong())}.")
+
+private fun formatSeconds(seconds: Long): String = "$seconds ${if (seconds == 1L) "second" else "seconds"}"

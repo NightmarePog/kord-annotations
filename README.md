@@ -1,6 +1,6 @@
 # Kord Annotations
 
-Annotation-driven Discord application commands and components for [Kord](https://github.com/kordlib/kord), generated at compile time with KSP.
+Kord Annotations uses KSP to generate registration and dispatch code for annotated [Kord](https://github.com/kordlib/kord) command and component handlers.
 
 ```kotlin
 class GeneralCommands {
@@ -12,22 +12,90 @@ class GeneralCommands {
 }
 ```
 
-There is no reflective package scan and no handwritten command registry. KSP validates each handler and generates a `CommandModule` plus its service entry.
+KSP validates each handler, then generates a `CommandModule` and service entry. At runtime, `ServiceLoader` finds the module; there is no reflective package scan or handwritten registry.
 
 ## Modules
 
-- `kord-annotations-core` — annotations, runtime, Kord adapter, localization, policies, and component state
+- `kord-annotations-core` — annotations, runtime, Kord adapter, policies, and component state
 - `kord-annotations-processor` — KSP validation and invocation generation
 - `kord-annotations-spring` — Spring Boot handler discovery and auto-configuration
-- `kord-annotations-gradle-plugin` — one-plugin setup and typed translation-key generation
+- `kord-annotations-gradle-plugin` — one-plugin Kotlin/JVM and KSP setup
 - `kord-annotations-help` — optional help catalog
 - `kord-annotations-testkit` — in-memory response controller and command harness
 
-The current development version is `0.1.0-SNAPSHOT`, group `io.github.nightmarepog`, and targets Java 21, Kotlin 2.4.10, KSP 2.3.10, and Kord 0.18.1.
-
 ## Setup
 
-Until the artifacts are published, include this checkout as a plugin build and use its build Maven repository:
+Requires Java 21.
+
+### GitHub Packages
+
+Releases are published to this repository's private GitHub Packages registry. Add a GitHub username and a classic personal access token with `read:packages` and access to this repository to `~/.gradle/gradle.properties`:
+
+```properties
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.key=YOUR_GITHUB_TOKEN
+```
+
+Configure the authenticated repository for plugins and dependencies:
+
+```kotlin
+// settings.gradle.kts
+pluginManagement {
+    val githubPackagesUsername = providers.gradleProperty("gpr.user")
+        .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+    val githubPackagesToken = providers.gradleProperty("gpr.key")
+        .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+
+    repositories {
+        maven("https://maven.pkg.github.com/nightmarepog/kord-annotations") {
+            credentials {
+                username = githubPackagesUsername.orNull
+                password = githubPackagesToken.orNull
+            }
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    val githubPackagesUsername = providers.gradleProperty("gpr.user")
+        .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+    val githubPackagesToken = providers.gradleProperty("gpr.key")
+        .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+
+    repositories {
+        maven("https://maven.pkg.github.com/nightmarepog/kord-annotations") {
+            credentials {
+                username = githubPackagesUsername.orNull
+                password = githubPackagesToken.orNull
+            }
+        }
+        mavenCentral()
+    }
+}
+```
+
+Apply the plugin using the release version:
+
+```kotlin
+plugins {
+    id("io.github.nightmarepog.kord-annotations") version "0.1.0"
+}
+
+kordAnnotations {
+    moduleName.set("MyBotCommands")
+    generatedPackage.set("com.example.bot.generated")
+}
+```
+
+The plugin applies Kotlin/JVM and KSP and adds matching versions of the core and processor dependencies.
+
+A workflow in another repository cannot use its own `GITHUB_TOKEN` here by default. Grant that repository Actions access in the package settings, or give the workflow a classic personal access token through a secret.
+
+### Local checkout
+
+For local development, include this checkout as a plugin build and use its build Maven repository:
 
 ```kotlin
 // settings.gradle.kts
@@ -50,7 +118,7 @@ Publish development artifacts once:
 ./gradlew publishAllPublicationsToBuildRepositoryRepository
 ```
 
-Apply the consumer plugin:
+Apply the consumer plugin without a version:
 
 ```kotlin
 plugins {
@@ -63,11 +131,25 @@ kordAnnotations {
 }
 ```
 
-The plugin applies Kotlin/JVM and KSP and adds the core and processor dependencies.
+## Releasing
+
+Run the `Release` workflow from `main` and enter a `MAJOR.MINOR.PATCH` version without a `v` prefix:
+
+```shell
+gh workflow run release.yml --ref main -f version=0.1.0
+```
+
+The workflow builds and tests the selected `main` commit, publishes all modules and the Gradle plugin marker to GitHub Packages, then creates the matching annotated tag and GitHub Release. The release includes an archived Maven repository and SHA-256 checksum. The version input controls every artifact and the generated `vMAJOR.MINOR.PATCH` tag.
+
+The job uses the `release` environment for deployment tracking. GitHub does not add approval rules when it creates that environment, so configure required reviewers or other protection rules in the repository environment settings if releases should require approval.
+
+Do not create release tags manually. If release creation fails after the workflow pushes its tag, rerun the original workflow run; it will skip the existing package upload and repair the Release. GitHub Packages publication is not transactional, so if an upload fails partway through before the tag is created, delete that incomplete version from the affected packages before rerunning.
 
 ## Commands and inferred options
 
 The first parameter is `CommandContext`. Remaining parameters become Discord options; nullable parameters and parameters with Kotlin defaults are optional.
+
+`@Description` values are literal text sent to Discord, not translation keys.
 
 ```kotlin
 class ModerationCommands {
@@ -130,7 +212,7 @@ class UtilityCommands {
 
 ## Checks, policies, and failures
 
-Custom annotations can carry reusable checks without coupling the framework to an application's permission model:
+`@CheckedBy` attaches a reusable check to a custom annotation:
 
 ```kotlin
 @Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION)
@@ -140,15 +222,15 @@ annotation class AdminOnly
 class AdminOnlyCheck : AnnotationCheck<AdminOnly> {
     override suspend fun check(annotation: AdminOnly, context: CommandContext): CheckResult =
         if (isAdmin(context.identity.userId)) CheckResult.Allowed
-        else CheckResult.Denied(CommandFailure("errors.adminOnly"))
+        else CheckResult.Denied(CommandFailure("Only administrators can use this command."))
 }
 ```
 
-Handlers may also use `@PrivateResponse`, `@BotDM`, `@AvailableIn`, `@Cooldown`, `@Timeout`, `@NoTimeout`, `@LoadingResponse`, `@NoLoadingResponse`, and `@Observed`. The default timeout is 30 seconds; the default localized loading response appears after two seconds. A handler response edits that loading response instead of sending an invalid second initial response.
+`@PrivateResponse`, `@BotDM`, and `@AvailableIn` control where and how the runtime responds. `@Cooldown`, `@Timeout`, `@NoTimeout`, `@LoadingResponse`, and `@NoLoadingResponse` control execution timing. By default, a handler times out after 30 seconds. If it has not responded within two seconds, the runtime sends `Working…`; the eventual response edits that message.
 
 ## Components
 
-Buttons, select menus, and modals use the same generated owner resolution:
+`@Button`, `@SelectMenu`, and `@Modal` handlers use the same generated dispatch as commands:
 
 ```kotlin
 class TicketComponents {
@@ -160,31 +242,11 @@ class TicketComponents {
 }
 ```
 
-`InMemoryComponentStateStore` creates cryptographically random state tokens. State is caller-bound, expires after 15 minutes by default, and is reusable unless `reusable = false` is requested.
-
-## Translations
-
-Put YAML files in `src/main/resources/translations`. The fallback file is `en.yml` by default:
-
-```yaml
-commands:
-  ping:
-    description: "Replies with pong"
-```
-
-The Gradle plugin generates compile-time constants:
-
-```kotlin
-@Command("ping")
-@Description(Translations.CommandsPingDescription)
-suspend fun ping(context: CommandContext) = context.respond("Pong!")
-```
-
-Translation values support ICU message syntax, including plurals. Missing keys in non-fallback locale files fail generation. Runtime lookup uses the interaction locale, language fallback, then English.
+`InMemoryComponentStateStore` uses cryptographically random tokens bound to one caller for 15 minutes by default. Set `reusable = false` for single-use tokens.
 
 ## Runtime
 
-Without Spring, provide handler and extension instances explicitly, install listeners before login, and optionally sync global commands:
+Without Spring, pass handlers, converters, checks, and autocomplete providers to `InstanceHandlerResolver`. Install listeners before login; global command sync is optional:
 
 ```kotlin
 val modules = CommandModules.load()
@@ -195,19 +257,18 @@ val runtime = KordAnnotations(
         DurationConverter(),
         AdminOnlyCheck(),
     ),
-    translations = DefaultTranslations.load(),
 )
 
 runtime.install(kord)
-runtime.syncGlobalCommands(kord) // authoritative: stale global commands are removed
+runtime.syncGlobalCommands(kord) // replaces the complete global command set
 kord.login()
 ```
 
-Spring Boot registers generated handler, converter, autocomplete-provider, and check owner types as beans. When a `Kord` bean exists, it installs listeners and authoritatively syncs global commands by default:
+Spring Boot registers the handlers, converters, autocomplete providers, and checks referenced by generated modules as beans. With a `Kord` bean and the default settings, it installs listeners and replaces the global command set at startup:
 
 ```kotlin
 dependencies {
-    implementation("io.github.nightmarepog:kord-annotations-spring:0.1.0-SNAPSHOT")
+    implementation("io.github.nightmarepog:kord-annotations-spring:0.1.0")
 }
 ```
 
@@ -215,7 +276,7 @@ Disable startup sync with `kord-annotations.sync-global-commands=false`.
 
 ## Testing
 
-`CommandTestHarness` executes the same generated invocation and policy pipeline with an in-memory response controller:
+`CommandTestHarness` runs generated commands through the normal execution path without connecting to Discord:
 
 ```kotlin
 val command = CommandModules.load().single().commands.single { it.descriptor.name == "ping" }
