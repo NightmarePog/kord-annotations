@@ -7,14 +7,32 @@ import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
+/** The result of retrieving component state by token. */
 sealed interface ComponentStateResult<out T : Any> {
+    /**
+     * Contains stored state.
+     *
+     * @property value Retrieved state value.
+     */
     data class Found<T : Any>(val value: T) : ComponentStateResult<T>
+
+    /** No state exists for the token or the stored value has a different type. */
     data object Missing : ComponentStateResult<Nothing>
+
+    /** The token existed but its lifetime elapsed. */
     data object Expired : ComponentStateResult<Nothing>
+
+    /** The token belongs to a different Discord user. */
     data object WrongUser : ComponentStateResult<Nothing>
 }
 
+/** Stores state referenced by compact component custom-ID tokens. */
 interface ComponentStateStore {
+    /**
+     * Stores [value] for [ownerUserId] and returns a token suitable for a component custom ID.
+     *
+     * When [reusable] is false, the first successful [consume] removes the value.
+     */
     fun <T : Any> create(
         value: T,
         ownerUserId: String,
@@ -22,9 +40,11 @@ interface ComponentStateStore {
         reusable: Boolean = true,
     ): String
 
+    /** Retrieves state when [token], [userId], and [type] match the stored entry. */
     fun <T : Any> consume(token: String, userId: String, type: Class<T>): ComponentStateResult<T>
 }
 
+/** A thread-safe in-memory [ComponentStateStore] with 144-bit random tokens. */
 class InMemoryComponentStateStore(
     private val clock: Clock = Clock.systemUTC(),
     private val random: SecureRandom = SecureRandom(),

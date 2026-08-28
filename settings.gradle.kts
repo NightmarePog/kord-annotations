@@ -15,4 +15,3 @@ dependencyResolutionManagement {
 rootProject.name = "kord-annotations"
 
 include("core", "processor", "spring", "gradle-plugin", "help", "testkit")
-

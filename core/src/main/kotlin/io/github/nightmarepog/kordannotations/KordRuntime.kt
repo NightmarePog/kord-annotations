@@ -34,16 +34,29 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlin.math.pow
 import kotlin.reflect.KClass
+import kotlin.time.Duration.Companion.seconds
 
+/** Resolves exact runtime types from a fixed collection of instances. */
 class InstanceHandlerResolver(instances: Iterable<Any>) : HandlerResolver {
     private val instances = instances.associateBy { it::class }
 
+    /** Creates a resolver from [instances]. Later instances replace earlier ones of the same type. */
     constructor(vararg instances: Any) : this(instances.asIterable())
 
+    /**
+     * Returns the registered instance whose concrete class equals [type].
+     *
+     * @throws IllegalStateException if no matching instance was registered.
+     */
     override fun resolve(type: KClass<*>): Any = instances[type]
         ?: error("No handler instance was registered for ${type.qualifiedName}")
 }
 
+/**
+ * Connects generated command modules to a Kord client.
+ *
+ * Command names must be unique within their root and component IDs must be globally unique.
+ */
 class KordAnnotations(
     modules: Iterable<CommandModule>,
     handlerResolver: HandlerResolver,
@@ -65,7 +78,11 @@ class KordAnnotations(
         }
     }
 
-    /** Installs listeners. Call this before [Kord.login]. */
+    /**
+     * Installs command, component, and autocomplete listeners on [kord].
+     *
+     * Call this before [Kord.login]. Cancel the returned jobs to remove the listeners.
+     */
     fun install(kord: Kord): List<Job> = listOf(
         kord.on<ApplicationCommandInteractionCreateEvent> {
             val kordInteraction = interaction
@@ -108,7 +125,14 @@ class KordAnnotations(
         },
     )
 
-    /** Replaces the complete global application-command set, which also removes stale commands. */
+    /**
+     * Replaces the complete global application-command set with generated commands.
+     *
+     * Failed requests are retried with exponential backoff up to [maximumAttempts]. Replacing the set also removes
+     * stale commands that are not present in the generated modules.
+     *
+     * @throws IllegalArgumentException if [maximumAttempts] is not positive.
+     */
     suspend fun syncGlobalCommands(kord: Kord, maximumAttempts: Int = 3) {
         require(maximumAttempts > 0)
         var lastFailure: Throwable? = null
@@ -146,7 +170,7 @@ class KordAnnotations(
                 return
             } catch (failure: Throwable) {
                 lastFailure = failure
-                if (attempt + 1 < maximumAttempts) delay((2.0.pow(attempt) * 1_000).toLong())
+                if (attempt + 1 < maximumAttempts) delay((2.0.pow(attempt) * 1_000).seconds)
             }
         }
         throw checkNotNull(lastFailure)

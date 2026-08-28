@@ -9,13 +9,19 @@ import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+/** Records successful uses and reports active cooldowns by key. */
 interface CooldownStore {
+    /** Returns the rounded-up remaining cooldown in seconds, or null when the key is ready. */
     fun remainingSeconds(key: String, durationSeconds: Int): Long?
+
+    /** Records a successful use of [key] at the current time. */
     fun record(key: String)
 }
 
+/** A thread-safe, process-local [CooldownStore]. */
 class InMemoryCooldownStore(private val clock: Clock = Clock.systemUTC()) : CooldownStore {
     private val uses = ConcurrentHashMap<String, Instant>()
 
@@ -30,11 +36,17 @@ class InMemoryCooldownStore(private val clock: Clock = Clock.systemUTC()) : Cool
     }
 }
 
+/**
+ * Executes generated commands with checks, cooldowns, loading responses, timeouts, and observers.
+ *
+ * [CommandFailure] instances are sent privately. Unexpected failures are observed and rethrown.
+ */
 class CommandExecutor(
     private val resolver: HandlerResolver,
     private val cooldowns: CooldownStore = InMemoryCooldownStore(),
     private val observers: List<CommandObserver> = emptyList(),
 ) {
+    /** Executes [command] with [context]. */
     suspend fun execute(command: GeneratedCommand, context: CommandContext) {
         val startedAt = System.nanoTime()
         notify(CommandExecutionEvent.Started(command.descriptor))
@@ -104,7 +116,7 @@ class CommandExecutor(
     private fun startLoadingResponse(scope: CoroutineScope, policy: ExecutionPolicy, context: CommandContext) =
         policy.loadingResponse?.let { response ->
             scope.launch {
-                delay(policy.loadingResponseDelayMillis)
+                delay(policy.loadingResponseDelayMillis.milliseconds)
                 if (!context.hasResponded) context.respond(response)
             }
         }
@@ -120,10 +132,12 @@ class CommandExecutor(
     private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000
 }
 
+/** Executes generated components with cooldowns, loading responses, and timeouts. */
 class ComponentExecutor(
     private val resolver: HandlerResolver,
     private val cooldowns: CooldownStore = InMemoryCooldownStore(),
 ) {
+    /** Executes [component] with [context]. */
     suspend fun execute(component: GeneratedComponent, context: ComponentContext) {
         val policy = component.descriptor.execution
         try {
@@ -131,7 +145,7 @@ class ComponentExecutor(
             supervisorScope {
                 val loading = policy.loadingResponse?.let { response ->
                     launch {
-                        delay(policy.loadingResponseDelayMillis)
+                        delay(policy.loadingResponseDelayMillis.milliseconds)
                         if (!context.hasResponded) context.respond(response)
                     }
                 }

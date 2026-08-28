@@ -8,10 +8,14 @@ on:
         description: Version to release, without the v prefix
         required: true
         type: string
+      retryPluginPortalOnly:
+        description: Skip Maven Central when retrying a release that reached Central
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
-  packages: write
 
 concurrency:
   group: release-${{ inputs.version }}
@@ -22,87 +26,52 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment: release
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RETRY_PLUGIN_PORTAL_ONLY: ${{ inputs.retryPluginPortalOnly }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
       - name: Set up Java
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
           java-version: "21"
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
-      - name: Validate release version
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+      - name: Inspect release
         id: version
-        shell: bash
+        run: .github/scripts/inspect-release.sh
+      - name: Validate release
+        if: steps.version.outputs.tag_exists == 'false'
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release versions must use MAJOR.MINOR.PATCH, for example 0.1.0." >&2
-            exit 1
-          fi
-          if git rev-parse --verify "refs/tags/v$RELEASE_VERSION" >/dev/null 2>&1; then
-            if [[ "$(git rev-list -n 1 "v$RELEASE_VERSION")" != "$(git rev-parse HEAD)" ]]; then
-              echo "Tag v$RELEASE_VERSION exists on a different commit." >&2
-              exit 1
-            fi
-            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "value=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+        run: .github/scripts/run-gradle-release.sh validateRelease
       - name: Build and test
-        run: ./gradlew clean build -PreleaseVersion="${{ steps.version.outputs.value }}" --no-daemon
+        run: .github/scripts/run-gradle-release.sh clean build
       - name: Build release repository
-        run: |
-          ./gradlew \
-            publishAllPublicationsToBuildRepositoryRepository \
-            -PreleaseVersion="${{ steps.version.outputs.value }}" \
-            --no-daemon
-      - name: Publish GitHub Packages
+        run: .github/scripts/run-gradle-release.sh releaseRepositoryChecksum
+      - name: Publish Maven Central
+        if: steps.version.outputs.tag_exists == 'false' && !inputs.retryPluginPortalOnly
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+        run: .github/scripts/run-gradle-release.sh publishToMavenCentral
+      - name: Publish Gradle plugin
         if: steps.version.outputs.tag_exists == 'false'
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ./gradlew \
-            publishAllPublicationsToGitHubPackagesRepository \
-            -PreleaseVersion="${{ steps.version.outputs.value }}" \
-            --no-daemon
-      - name: Package release artifacts
-        id: artifacts
-        shell: bash
-        run: |
-          archive="kord-annotations-${{ steps.version.outputs.value }}-maven-repository.tar.gz"
-          tar -C build/repository -czf "$archive" .
-          sha256sum "$archive" > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
-          echo "checksum=$archive.sha256" >> "$GITHUB_OUTPUT"
-      - name: Create release tag
-        if: steps.version.outputs.tag_exists == 'false'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
-      - name: Create or repair GitHub release
+          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+        run: .github/scripts/run-gradle-release.sh :gradle-plugin:publishPlugins
+      - name: Finalize GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            gh release upload "${{ steps.version.outputs.tag }}" \
-              "${{ steps.artifacts.outputs.archive }}" \
-              "${{ steps.artifacts.outputs.checksum }}" \
-              --clobber
-          else
-            gh release create "${{ steps.version.outputs.tag }}" \
-              "${{ steps.artifacts.outputs.archive }}" \
-              "${{ steps.artifacts.outputs.checksum }}" \
-              --verify-tag \
-              --generate-notes \
-              --title "${{ steps.version.outputs.tag }}"
-          fi
+          TAG_EXISTS: ${{ steps.version.outputs.tag_exists }}
+        run: .github/scripts/finalize-release.sh

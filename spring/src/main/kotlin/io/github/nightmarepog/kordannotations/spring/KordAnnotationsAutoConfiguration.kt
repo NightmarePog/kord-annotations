@@ -15,19 +15,23 @@ import org.springframework.context.ApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 
+/** Discovers generated modules and connects Kord Annotations to a Spring-managed [Kord] client. */
 @AutoConfiguration
 @EnableConfigurationProperties(KordAnnotationsProperties::class)
 @Import(KordAnnotationsHandlerRegistrar::class)
 class KordAnnotationsAutoConfiguration {
+    /** Loads generated modules when the application does not provide its own list. */
     @Bean
     @ConditionalOnMissingBean
     fun generatedCommandModules(): List<CommandModule> = CommandModules.load()
 
+    /** Resolves handlers from Spring when no other resolver is configured. */
     @Bean
     @ConditionalOnMissingBean
     fun handlerResolver(applicationContext: ApplicationContext): HandlerResolver =
         SpringHandlerResolver(applicationContext)
 
+    /** Creates the runtime from discovered modules and the configured resolver. */
     @Bean
     @ConditionalOnMissingBean
     fun kordAnnotations(
@@ -35,6 +39,7 @@ class KordAnnotationsAutoConfiguration {
         handlerResolver: HandlerResolver,
     ): KordAnnotations = KordAnnotations(modules, handlerResolver)
 
+    /** Installs listeners and optionally synchronizes commands after singleton creation. */
     @Bean
     @ConditionalOnBean(Kord::class)
     fun kordAnnotationsInstaller(

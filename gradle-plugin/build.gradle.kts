@@ -1,6 +1,9 @@
+import org.gradle.plugin.compatibility.compatibility
+
 plugins {
 	kotlin("jvm")
 	`java-gradle-plugin`
+	id("com.gradle.plugin-publish") version "2.1.1"
 }
 
 dependencies {
@@ -11,12 +14,20 @@ dependencies {
 }
 
 gradlePlugin {
+	website.set("https://github.com/NightmarePog/kord-annotations")
+	vcsUrl.set("https://github.com/NightmarePog/kord-annotations")
 	plugins {
 		create("kordAnnotations") {
 			id = "io.github.nightmarepog.kord-annotations"
 			implementationClass = "io.github.nightmarepog.kordannotations.gradle.KordAnnotationsPlugin"
 			displayName = "Kord Annotations"
 			description = "Configures KSP to generate Kord command modules."
+			tags.set(listOf("discord", "kord", "kotlin", "ksp", "commands"))
+			compatibility {
+				features {
+					configurationCache = false
+				}
+			}
 		}
 	}
 }

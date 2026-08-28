@@ -4,7 +4,9 @@ import com.google.devtools.ksp.gradle.KspExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 
+/** Configures Kotlin/JVM, KSP, and matching Kord Annotations dependencies. */
 class KordAnnotationsPlugin : Plugin<Project> {
+    /** Applies and configures the command-generation toolchain on [project]. */
     override fun apply(project: Project) {
         project.pluginManager.apply("org.jetbrains.kotlin.jvm")
         project.pluginManager.apply("com.google.devtools.ksp")

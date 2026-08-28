@@ -1,100 +1,78 @@
 # Kord Annotations
 
-Kord Annotations is a compile-time command framework for [Kord](https://github.com/kordlib/kord). Annotate Kotlin handlers and KSP generates their Discord command metadata, registration, and dispatch code.
+Kord Annotations generates Discord command metadata and dispatch code from Kotlin handlers. It uses KSP at compile time, then loads generated modules through `ServiceLoader` at runtime.
+
+Requires Java 21.
+
+## Setup
+
+The plugin is available from the Gradle Plugin Portal. Its libraries are available from Maven Central. No GitHub credentials are required.
+
+```kotlin
+plugins {
+    id("io.github.nightmarepog.kord-annotations") version "0.2.0"
+}
+```
+
+The plugin applies Kotlin/JVM and KSP, then adds matching versions of the core library and processor. Projects that replace Gradle's default repositories need `gradlePluginPortal()` in plugin management and `mavenCentral()` in dependency resolution.
+
+Generated names can be changed if they conflict with existing code:
+
+```kotlin
+kordAnnotations {
+    generatedPackage.set("com.example.bot.generated")
+    moduleName.set("BotCommandModule")
+}
+```
+
+## First command
 
 ```kotlin
 class GeneralCommands {
     @Command("ping")
     @Description("Replies with pong")
-    suspend fun ping(context: CommandContext) {
-        context.respond("Pong!")
-    }
+    suspend fun ping(context: CommandContext) = context.respond("Pong!")
 }
 ```
 
-Generated modules are loaded through `ServiceLoader`. There is no reflective package scan or handwritten command registry.
-
-Current release: [v0.1.0](https://github.com/NightmarePog/kord-annotations/releases/tag/v0.1.0). Requires Java 21.
-
-## Install
-
-Artifacts are published to GitHub Packages. GitHub requires authentication for public Maven packages, so create a classic personal access token with `read:packages` and add it to `~/.gradle/gradle.properties`:
-
-```properties
-gpr.user=YOUR_GITHUB_USERNAME
-gpr.key=YOUR_CLASSIC_PERSONAL_ACCESS_TOKEN
-```
-
-The following is configuration for the project using Kord Annotations, not this repository. Add the package repository to both plugin and dependency resolution:
+Create the runtime with every handler and extension instance, install its listeners, then log in:
 
 ```kotlin
-// settings.gradle.kts
-pluginManagement {
-    repositories {
-        maven("https://maven.pkg.github.com/nightmarepog/kord-annotations") {
-            credentials {
-                username = providers.gradleProperty("gpr.user").get()
-                password = providers.gradleProperty("gpr.key").get()
-            }
-        }
-        gradlePluginPortal()
-        mavenCentral()
-    }
-}
+val commands = KordAnnotations(
+    modules = CommandModules.load(),
+    handlerResolver = InstanceHandlerResolver(GeneralCommands()),
+)
 
-dependencyResolutionManagement {
-    repositories {
-        maven("https://maven.pkg.github.com/nightmarepog/kord-annotations") {
-            credentials {
-                username = providers.gradleProperty("gpr.user").get()
-                password = providers.gradleProperty("gpr.key").get()
-            }
-        }
-        mavenCentral()
-    }
-}
+commands.install(kord)
+commands.syncGlobalCommands(kord)
+kord.login()
 ```
 
-Apply the plugin in the consuming project's `build.gradle.kts`:
+`syncGlobalCommands` replaces the complete global command set. Commands not present in the generated modules are removed.
 
-```kotlin
-plugins {
-    id("io.github.nightmarepog.kord-annotations") version "0.1.0"
-}
-```
+## Handler rules
 
-The plugin applies Kotlin/JVM and KSP, then adds matching versions of `kord-annotations-core` and `kord-annotations-processor`. Its defaults are sufficient for most projects. Generated names can be changed when needed:
-
-```kotlin
-kordAnnotations {
-    moduleName.set("MyBotCommands")
-    generatedPackage.set("com.example.bot.generated")
-}
-```
-
-## Commands
-
-The first handler parameter must be `CommandContext`. Every remaining parameter becomes a Discord option. Nullable parameters and parameters with Kotlin defaults are optional.
+The first command parameter must be `CommandContext`. Remaining parameters become Discord options. Nullable parameters and parameters with Kotlin defaults are optional.
 
 ```kotlin
 class ModerationCommands {
     @Command("warn")
     @Description("Warns a server member")
     @PrivateResponse
-    @Cooldown(seconds = 10, per = CooldownScope.USER)
+    @Cooldown(seconds = 10)
     suspend fun warn(
         context: CommandContext,
         @Description("Member to warn") member: Member,
         @Description("Reason shown to the member") reason: String = "No reason supplied",
-    ) {
-        context.respond("Warned ${member.displayName}: $reason")
-    }
+    ) = context.respond("Warned ${member.displayName}: $reason")
 }
 ```
 
-`@Description` values are literal Discord text, not translation keys. Supported option types include strings, integers, numbers, booleans, users and members, channels, roles, mentionables, and attachments. Use `@Range`, `@Length`, `@Choices`, and `@Autocomplete` to refine generated option metadata.
+`@Description` contains literal Discord text. It is not a translation key.
 
-Annotating a class creates a slash-command root. Its annotated methods become subcommands:
+Supported option values include strings, integers, numbers, booleans, users, members, channels, roles, mentionables, and attachments. `@Option` changes the generated option name. `@Choices`, `@Range`, and `@Length` add Discord constraints.
+
+Annotating a class creates a slash-command root. Annotated methods become subcommands:
 
 ```kotlin
 @Command("settings")
@@ -109,15 +87,24 @@ class SettingsCommands {
 }
 ```
 
-`@UserCommand` and `@MessageCommand` generate Discord context-menu commands.
+`@UserCommand` and `@MessageCommand` create context-menu commands.
 
-### Policies and checks
+## Execution policies
 
-`@PrivateResponse`, `@BotDM`, and `@AvailableIn` control response visibility and availability. `@Cooldown`, `@Timeout`, `@NoTimeout`, `@LoadingResponse`, and `@NoLoadingResponse` control execution.
+- `@PrivateResponse` makes plain-text responses private.
+- `@AvailableIn` selects Discord interaction contexts.
+- `@BotDM` enables bot direct messages.
+- `@Cooldown` limits repeated use by user, channel, guild, or globally.
+- `@Timeout` changes the default 30-second timeout.
+- `@NoTimeout` disables the timeout.
+- `@LoadingResponse` changes the response sent when a handler takes longer than two seconds.
+- `@NoLoadingResponse` disables that response.
 
-Handlers time out after 30 seconds by default. If a handler has not responded within two seconds, the runtime sends `Working…` and edits that response when the handler completes.
+Policy annotations on a handler override the same policy on its class.
 
-Attach reusable checks through a custom annotation:
+## Checks
+
+Attach a checker to a reusable annotation:
 
 ```kotlin
 @Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION)
@@ -131,9 +118,24 @@ class AdminOnlyCheck : AnnotationCheck<AdminOnly> {
 }
 ```
 
-### Domain types
+Register the checker with the handler resolver. A denied check sends its message privately and does not invoke the handler.
 
-Use `@ConvertWith` when a handler should receive a domain type instead of a Discord primitive:
+## Autocomplete and conversion
+
+An autocomplete provider returns up to 25 choices:
+
+```kotlin
+class LocaleAutocomplete : AutocompleteProvider {
+    override suspend fun complete(input: String, context: CommandContext) =
+        supportedLocales
+            .filter { it.startsWith(input, ignoreCase = true) }
+            .map { AutocompleteChoice(it, it) }
+}
+```
+
+Apply it with `@Autocomplete(LocaleAutocomplete::class)` and register the provider with the handler resolver.
+
+`@ConvertWith` maps a Discord option into a domain type:
 
 ```kotlin
 data class DurationSeconds(val value: Long)
@@ -157,78 +159,70 @@ class UtilityCommands {
 
 ## Components
 
-Buttons, select menus, and modals use the same generated dispatch path:
+Buttons, select menus, and modal submissions use generated handlers too:
 
 ```kotlin
 class TicketComponents {
     @Button("ticket close")
     @PrivateResponse
-    suspend fun close(context: ComponentContext) {
-        context.respond("Ticket closed")
-    }
+    suspend fun close(context: ComponentContext) = context.respond("Ticket closed")
 }
 ```
 
-`InMemoryComponentStateStore` creates random tokens bound to one caller for 15 minutes by default. Set `reusable = false` for single-use state.
+A component handler receives one `ComponentContext`. Select-menu values are available through `context.values`.
 
-## Runtime
-
-Without Spring, supply every handler, converter, check, and autocomplete provider to `InstanceHandlerResolver`. Install listeners before logging in:
-
-```kotlin
-val runtime = KordAnnotations(
-    modules = CommandModules.load(),
-    handlerResolver = InstanceHandlerResolver(
-        GeneralCommands(),
-        DurationConverter(),
-        AdminOnlyCheck(),
-    ),
-)
-
-runtime.install(kord)
-runtime.syncGlobalCommands(kord) // replaces the complete global command set
-kord.login()
-```
+`InMemoryComponentStateStore` creates tokens tied to one Discord user. Tokens last 15 minutes by default. Pass `reusable = false` when state should be consumed once.
 
 ## Spring Boot
 
-Add the Spring integration when handlers should be discovered as beans:
-
 ```kotlin
 dependencies {
-    implementation("io.github.nightmarepog:kord-annotations-spring:0.1.0")
+    implementation("io.github.nightmarepog:kord-annotations-spring:0.2.0")
 }
 ```
 
-With a `Kord` bean present, the integration installs listeners and synchronizes global commands during startup. Disable command synchronization with `kord-annotations.sync-global-commands=false`, or disable the integration with `kord-annotations.enabled=false`.
+With a `Kord` bean present, Spring discovers generated handlers, installs listeners, and synchronizes global commands during startup.
+
+```properties
+kord-annotations.enabled=true
+kord-annotations.sync-global-commands=true
+kord-annotations.maximum-sync-attempts=3
+```
+
+Set `sync-global-commands` to `false` when command synchronization is handled elsewhere.
 
 ## Testing
 
-Add the testkit to run generated commands without connecting to Discord:
-
 ```kotlin
 dependencies {
-    testImplementation("io.github.nightmarepog:kord-annotations-testkit:0.1.0")
+    testImplementation("io.github.nightmarepog:kord-annotations-testkit:0.2.0")
 }
 ```
 
 ```kotlin
-val command = CommandModules.load().single().commands.single { it.descriptor.name == "ping" }
-val result = CommandTestHarness(InstanceHandlerResolver(GeneralCommands())).execute(command)
+val command = CommandModules.load()
+    .flatMap { it.commands }
+    .single { it.descriptor.name == "ping" }
+
+val result = CommandTestHarness(InstanceHandlerResolver(GeneralCommands()))
+    .execute(command)
+
 assertEquals("Pong!", result.responses.single().content)
 ```
 
+The testkit runs the same checks, cooldowns, loading behavior, timeout handling, and generated invocation path without connecting to Discord.
+
 ## Modules
 
-| Artifact | Purpose |
+| Artifact | Contents |
 | --- | --- |
-| `kord-annotations-core` | Annotations, runtime, policies, and component state |
+| `kord-annotations-core` | Annotations, descriptors, runtime, policies, and component state |
 | `kord-annotations-processor` | KSP validation and code generation |
-| `kord-annotations-gradle-plugin` | Kotlin/JVM, KSP, core, and processor setup |
+| `kord-annotations-gradle-plugin` | Kotlin/JVM, KSP, and dependency setup |
 | `kord-annotations-spring` | Spring Boot discovery and auto-configuration |
-| `kord-annotations-help` | Optional generated-command help catalog |
+| `kord-annotations-help` | Help entries generated from command descriptors |
 | `kord-annotations-testkit` | In-memory command execution and response recording |
 
 ## License
 
-Kord Annotations is available under the [Mozilla Public License 2.0](LICENSE).
+[Mozilla Public License 2.0](LICENSE)

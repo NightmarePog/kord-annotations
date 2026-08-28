@@ -6,7 +6,9 @@ import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar
 import org.springframework.core.type.AnnotationMetadata
 
+/** Registers generated handler and extension types as Spring beans when absent. */
 class KordAnnotationsHandlerRegistrar : ImportBeanDefinitionRegistrar {
+    /** Registers every generated owner, converter, autocomplete provider, and check. */
     override fun registerBeanDefinitions(importingClassMetadata: AnnotationMetadata, registry: BeanDefinitionRegistry) {
         CommandModules.load().flatMap { module ->
             module.commands.map { it.ownerType } +
