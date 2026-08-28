@@ -1,20 +1,42 @@
 # Kord Annotations
 
+[![Download](https://img.shields.io/maven-central/v/io.github.nightmarepog/kord-annotations-core.svg?label=Maven%20Central&style=for-the-badge)](https://central.sonatype.com/artifact/io.github.nightmarepog/kord-annotations-core)
+[![GitHub CI status](https://img.shields.io/github/actions/workflow/status/NightmarePog/kord-annotations/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/NightmarePog/kord-annotations/actions/workflows/ci.yml)
+
 Kord Annotations generates Discord command metadata and dispatch code from Kotlin handlers. It uses KSP at compile time, then loads generated modules through `ServiceLoader` at runtime.
 
 Requires Java 21.
 
-## Setup
+## Installation
 
-The plugin is available from the Gradle Plugin Portal. Its libraries are available from Maven Central. No GitHub credentials are required.
+Add Maven Central to plugin and dependency resolution:
 
 ```kotlin
+// settings.gradle.kts
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+```
+
+Apply the plugin:
+
+```kotlin
+// build.gradle.kts
 plugins {
     id("io.github.nightmarepog.kord-annotations") version "0.2.0"
 }
 ```
 
-The plugin applies Kotlin/JVM and KSP, then adds matching versions of the core library and processor. Projects that replace Gradle's default repositories need `gradlePluginPortal()` in plugin management and `mavenCentral()` in dependency resolution.
+The plugin applies Kotlin/JVM and KSP, then adds matching versions of the core library and processor. No GitHub credentials are required. The Gradle Plugin Portal submission is awaiting its initial review, so `mavenCentral()` is currently required in `pluginManagement`.
 
 Generated names can be changed if they conflict with existing code:
 
@@ -214,14 +236,14 @@ The testkit runs the same checks, cooldowns, loading behavior, timeout handling,
 
 ## Modules
 
-| Artifact | Contents |
-| --- | --- |
-| `kord-annotations-core` | Annotations, descriptors, runtime, policies, and component state |
-| `kord-annotations-processor` | KSP validation and code generation |
-| `kord-annotations-gradle-plugin` | Kotlin/JVM, KSP, and dependency setup |
-| `kord-annotations-spring` | Spring Boot discovery and auto-configuration |
-| `kord-annotations-help` | Help entries generated from command descriptors |
-| `kord-annotations-testkit` | In-memory command execution and response recording |
+| Artifact                         | Contents                                                         |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `kord-annotations-core`          | Annotations, descriptors, runtime, policies, and component state |
+| `kord-annotations-processor`     | KSP validation and code generation                               |
+| `kord-annotations-gradle-plugin` | Kotlin/JVM, KSP, and dependency setup                            |
+| `kord-annotations-spring`        | Spring Boot discovery and auto-configuration                     |
+| `kord-annotations-help`          | Help entries generated from command descriptors                  |
+| `kord-annotations-testkit`       | In-memory command execution and response recording               |
 
 ## License
 
